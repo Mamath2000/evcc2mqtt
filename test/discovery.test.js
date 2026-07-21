@@ -36,6 +36,14 @@ test('component ids are namespaced by the configured topic prefix', () => {
   assert.ok(Object.keys(other.components).every((id) => id.startsWith('custom_')));
 });
 
+test('device name defaults to "EVCC (MQTT)" and is overridable via config.haDeviceName', () => {
+  const defaultPayload = buildDeviceDiscoveryPayload(config);
+  assert.equal(defaultPayload.device.name, 'EVCC (MQTT)');
+
+  const customPayload = buildDeviceDiscoveryPayload({ ...config, haDeviceName: 'My EVCC' });
+  assert.equal(customPayload.device.name, 'My EVCC');
+});
+
 test('publishState publishes the aggregate as retained JSON on the sessions topic', () => {
   const client = createFakeMqttClient();
   publishState(client, config, { chargedEnergy: 10 });

@@ -37,7 +37,7 @@ export function buildDeviceDiscoveryPayload(config) {
     device: {
       identifiers: [config.topicPrefix],
       manufacturer: 'evcc2mqtt',
-      name: 'EVCC',
+      name: config.haDeviceName || 'EVCC (MQTT)',
     },
     origin: {
       name: 'evcc2mqtt',

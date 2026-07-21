@@ -1,0 +1,38 @@
+services:
+  evcc2mqtt:
+    # Build depuis le Dockerfile du repo (au lieu de l'image publiée)
+    build:
+      context: .
+    image: evcc2mqtt:local
+    container_name: evcc2mqtt
+    restart: unless-stopped
+
+    env_file:
+      - ./.env
+
+    environment:
+      # Important : la logique "aujourd'hui" (sessionsForDay) se base sur
+      # l'heure locale du conteneur, pas UTC. Sans ce TZ, le passage à un
+      # nouveau jour se ferait à minuit UTC au lieu de minuit heure locale.
+      - TZ=Europe/Paris
+
+    # Notes réseau :
+    # - Si EVCC_HOST pointe vers un hostname .local (mDNS, ex: evcc.local),
+    #   ça peut ne pas se résoudre depuis le conteneur. Le plus simple est de
+    #   mettre l'IP d'evcc dans EVCC_HOST (ex: 192.168.1.50), ou d'ajouter :
+    # extra_hosts:
+    #   - "evcc.local:192.168.1.50"
+
+    # Pas de port exposé : le service est un client sortant (evcc + MQTT).
+
+# --- Variante optionnelle : broker MQTT local ---
+# Si tu n'as pas déjà un broker, dé-commente ceci et adapte MQTT_URL dans
+# .env vers "mqtt://mqtt:1883".
+#
+#  mqtt:
+#    image: eclipse-mosquitto:2
+#    container_name: mqtt
+#    restart: unless-stopped
+#    ports:
+#      - "1883:1883"
+#    # Pour persister la conf/données, ajoute des volumes selon tes besoins.

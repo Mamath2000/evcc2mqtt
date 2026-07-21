@@ -55,6 +55,7 @@ client MQTT (`consumption.js`).
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | Identifiants MQTT | *(vide)* |
 | `TOPIC_PREFIX` | Préfixe des topics d'état | `evcc2mqtt` |
 | `HA_DISCOVERY_PREFIX` | Préfixe des topics de discovery HA | `homeassistant` |
+| `HA_DEVICE_NAME` | Nom du device affiché dans Home Assistant | `EVCC (MQTT)` |
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km | `evcc2mqtt/config/conso_wh_km` |
 | `POLL_INTERVAL_MS` | Fréquence de rafraîchissement/republication | `60000` (1 min) |
 | `LOG_LEVEL` | Verbosité des logs : `error`, `info`, `debug` | `info` |
@@ -64,7 +65,8 @@ client MQTT (`consumption.js`).
 - Au démarrage puis toutes les `POLL_INTERVAL_MS` : récupère les sessions evcc du mois en
   cours, isole celles d'aujourd'hui (heure locale du serveur), et agrège les métriques.
 - Publie un seul message de découverte HA "device discovery" à la connexion (retained) sur
-  `homeassistant/device/evcc2mqtt/config`, déclarant un device "EVCC" avec ses 10 composants
+  `homeassistant/device/evcc2mqtt/config`, déclarant un device (nom configurable via
+  `HA_DEVICE_NAME`) avec ses 10 composants
   (un par métrique), tous alimentés par un unique topic d'état JSON `evcc2mqtt/sessions`
   (mis à jour à chaque cycle) via des `value_template`.
 - Métriques publiées : `chargedEnergy`, `solarCharged`, `gridCharged`,
@@ -98,6 +100,28 @@ DOCKER_USER=mon_compte make release-docker-push
 
 Pour un simple build/run local sans toucher à la version : `make docker-build` puis `make
 docker-run` (celui-ci monte `./.env` dans le container via `--env-file`).
+
+### docker-compose
+
+Deux exemples sont fournis :
+
+- `docker-compose.yml` : utilise l'image publiée (`mathmath350/evcc2mqtt:latest`).
+- `docker-compose.example.yml` : build depuis les sources locales (`build: context: .`).
+
+Les deux lisent la config depuis `./.env` (`env_file`) et fixent `TZ=Europe/Paris` — **important**
+car `sessionsForDay` détermine "aujourd'hui" à partir de l'heure locale du conteneur ; sans ce
+`TZ`, un conteneur Docker tourne par défaut en UTC et le changement de jour se ferait à minuit
+UTC au lieu de minuit heure locale. Adapte cette valeur à ton fuseau si besoin.
+
+```bash
+cp .env.example .env   # puis éditer .env
+
+# avec l'image publiée
+docker compose up -d
+
+# ou en buildant en local
+docker compose -f docker-compose.example.yml up -d --build
+```
 
 ## Limitations connues
 

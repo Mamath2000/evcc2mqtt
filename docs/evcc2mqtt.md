@@ -112,7 +112,8 @@ cette métrique vaut `0`.
 ### Intégration Home Assistant (MQTT Discovery)
 
 evcc2mqtt utilise le format **"device discovery"** de Home Assistant : un seul message de
-découverte (retained, publié à la connexion) déclare un device `EVCC` avec l'ensemble de ses
+découverte (retained, publié à la connexion) déclare un device (nom configurable via
+`HA_DEVICE_NAME`, `EVCC (MQTT)` par défaut) avec l'ensemble de ses
 capteurs (`components`), tous alimentés par l'unique topic d'état `{prefix}/sessions` via des
 `value_template` (ex. `{{ value_json.chargedEnergy | default(0) }}`).
 
@@ -218,6 +219,18 @@ Ce mécanisme s'inspire de celui du projet [envoyJS](https://github.com/Mamath20
 dont il reprend la structure (`Makefile` + `scripts/release.sh` + `scripts/bump-version.js` +
 `scripts/build-docker-image.sh`), en changeant l'incrément par défaut de *patch* à *minor*.
 
+### docker-compose
+
+Deux fichiers d'exemple sont fournis, tous deux pilotés par `env_file: ./.env` :
+
+- `docker-compose.yml` : tire l'image publiée `mathmath350/evcc2mqtt:latest`.
+- `docker-compose.example.yml` : build depuis le `Dockerfile` local (`build: context: .`).
+
+Les deux fixent `TZ=Europe/Paris` sur le conteneur. C'est important : `sessionsForDay`
+détermine "aujourd'hui" via `localDateKey(new Date())`, donc à partir de l'heure **locale** du
+processus. Un conteneur Docker tourne par défaut en UTC ; sans ce `TZ`, le changement de jour
+se ferait à minuit UTC (soit 1h ou 2h du matin heure française) au lieu de minuit heure locale.
+
 ## Paramètres du fichier .env
 
 | Variable | Description | Défaut |
@@ -229,6 +242,7 @@ dont il reprend la structure (`Makefile` + `scripts/release.sh` + `scripts/bump-
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | Identifiants MQTT | *(vide)* |
 | `TOPIC_PREFIX` | Préfixe de tous les topics publiés par le programme | `evcc2mqtt` |
 | `HA_DISCOVERY_PREFIX` | Préfixe des topics de découverte HA | `homeassistant` |
+| `HA_DEVICE_NAME` | Nom du device affiché dans Home Assistant | `EVCC (MQTT)` |
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km (payload numérique) | `evcc2mqtt/config/conso_wh_km` |
 | `POLL_INTERVAL_MS` | Fréquence de rafraîchissement/republication des indicateurs | `60000` (1 min) |
 | `LOG_LEVEL` | Verbosité des logs : `error`, `info`, `debug` | `info` |
