@@ -17,7 +17,6 @@ export const config = {
     url: required('MQTT_URL'),
     username: process.env.MQTT_USERNAME || undefined,
     password: process.env.MQTT_PASSWORD || undefined,
-    clientId: process.env.MQTT_CLIENT_ID || 'evcc2mqtt',
   },
   topicPrefix: process.env.TOPIC_PREFIX || 'evcc2mqtt',
   haDiscoveryPrefix: process.env.HA_DISCOVERY_PREFIX || 'homeassistant',

@@ -27,6 +27,14 @@ make start
 | `make start` | Lance le programme (`npm start`) |
 | `make test` | Lance les tests de composant (`node --test`) |
 | `make clean` | Supprime `node_modules` |
+| `make docker-build` | Build l'image Docker locale (sans bump de version) |
+| `make docker-run` | Lance le container (`--env-file .env`) |
+| `make release` | Alias de `release-minor` |
+| `make release-patch` | Incrémente la version (patch) + tag git |
+| `make release-minor` | Incrémente la version (minor) + tag git |
+| `make release-major` | Incrémente la version (major) + tag git |
+| `make release-docker` | Incrémente la version (minor) + build l'image Docker |
+| `make release-docker-push` | Incrémente la version (minor) + build + push l'image Docker |
 
 ## Tests
 
@@ -45,7 +53,6 @@ client MQTT (`consumption.js`).
 | `EVCC_LANG` | Langue passée à l'API sessions | `fr` |
 | `MQTT_URL` | URL du broker MQTT (`mqtt://host:1883`) | *(obligatoire)* |
 | `MQTT_USERNAME` / `MQTT_PASSWORD` | Identifiants MQTT | *(vide)* |
-| `MQTT_CLIENT_ID` | Client ID MQTT | `evcc2mqtt` |
 | `TOPIC_PREFIX` | Préfixe des topics d'état | `evcc2mqtt` |
 | `HA_DISCOVERY_PREFIX` | Préfixe des topics de discovery HA | `homeassistant` |
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km | `evcc2mqtt/config/conso_wh_km` |
@@ -70,6 +77,27 @@ client MQTT (`consumption.js`).
 - Publie aussi, à chaque cycle, le détail brut des sessions du jour (tableau JSON) sur un topic
   de debug `evcc2mqtt/debug/sessions`, pour inspecter facilement les sessions utilisées dans le
   calcul (utile avec MQTT Explorer par exemple).
+
+## Docker et release
+
+L'image Docker est construite via un `Dockerfile` multi-stage (`node:20-alpine`, dépendances
+de production uniquement).
+
+Le versionnage suit `package.json` (semver). `make release-minor` (ou son alias `make
+release`) incrémente la version **mineure**, commit `package.json`/`package-lock.json` et pose
+un tag git `vX.Y.Z` si on est dans un dépôt git. `make release-docker` fait la même chose puis
+construit l'image ; `make release-docker-push` construit et pousse en plus les tags
+`latest`/`X.Y.Z`/`<git-ref-court>` sur Docker Hub (nécessite `docker login` au préalable).
+
+Le repo/nom d'image Docker Hub sont surchargeables via les variables d'environnement
+`DOCKER_USER` (défaut `mathmath350`) et `APP_NAME` (défaut `evcc2mqtt`), par exemple :
+
+```bash
+DOCKER_USER=mon_compte make release-docker-push
+```
+
+Pour un simple build/run local sans toucher à la version : `make docker-build` puis `make
+docker-run` (celui-ci monte `./.env` dans le container via `--env-file`).
 
 ## Limitations connues
 

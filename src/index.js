@@ -31,20 +31,17 @@ async function run(client, consumption) {
 }
 
 const client = createMqttClient(config);
+const consumption = createConsumptionTracker(client, config);
 let interval;
 
-client.on('connect', () => {
-  logger.info('connected to MQTT broker');
+// HA discovery is retained (no need to resend it on every reconnect) and the
+// polling loop must only ever be armed once: MQTT reconnects fire another
+// "connect" event, and re-arming setInterval on each one would stack up
+// duplicate polling loops running in parallel over time.
+client.once('connect', () => {
   publishDeviceDiscovery(client, config);
-
-  const consumption = createConsumptionTracker(client, config);
-
   run(client, consumption);
   interval = setInterval(() => run(client, consumption), config.pollIntervalMs);
-});
-
-client.on('error', (err) => {
-  logger.error('MQTT error:', err);
 });
 
 function shutdown() {
