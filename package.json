@@ -1,6 +1,6 @@
 {
   "name": "evcc2mqtt",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bridge evcc charging session data to Home Assistant via MQTT",
   "type": "module",
   "main": "src/index.js",
