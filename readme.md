@@ -13,11 +13,28 @@ Postgres/cagg) ; ce projet remplace cette étape par une simple publication MQTT
 ## Installation
 
 ```bash
-npm install
+make install
 cp .env.example .env
 # éditer .env : EVCC_HOST, MQTT_URL, etc.
-npm start
+make start
 ```
+
+## Commandes
+
+| Commande | Effet |
+| --- | --- |
+| `make install` | `npm install` |
+| `make start` | Lance le programme (`npm start`) |
+| `make test` | Lance les tests de composant (`node --test`) |
+| `make clean` | Supprime `node_modules` |
+
+## Tests
+
+Tests de composant sous `test/` (test runner intégré de Node, aucune dépendance
+supplémentaire) : logique d'agrégation (`aggregate.js`, avec les valeurs de référence issues du
+flow Node-RED d'origine), construction du payload de découverte HA (`discovery.js`), appels à
+l'API evcc avec `fetch` mocké (`evccApi.js`), et suivi de la consommation véhicule via un faux
+client MQTT (`consumption.js`).
 
 ## Configuration (`.env`)
 
@@ -33,6 +50,7 @@ npm start
 | `HA_DISCOVERY_PREFIX` | Préfixe des topics de discovery HA | `homeassistant` |
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km | `evcc2mqtt/config/conso_wh_km` |
 | `POLL_INTERVAL_MS` | Fréquence de rafraîchissement/republication | `60000` (1 min) |
+| `LOG_LEVEL` | Verbosité des logs : `error`, `info`, `debug` | `info` |
 
 ## Fonctionnement
 
@@ -49,6 +67,9 @@ npm start
   retained sur `CONSO_TOPIC`. Tant qu'aucune valeur n'a été reçue, cette métrique vaut `0`.
 - Si aucune session n'existe encore aujourd'hui, le cycle est simplement ignoré (les dernières
   valeurs retained restent affichées dans HA).
+- Publie aussi, à chaque cycle, le détail brut des sessions du jour (tableau JSON) sur un topic
+  de debug `evcc2mqtt/debug/sessions`, pour inspecter facilement les sessions utilisées dans le
+  calcul (utile avec MQTT Explorer par exemple).
 
 ## Limitations connues
 

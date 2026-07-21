@@ -23,4 +23,5 @@ export const config = {
   haDiscoveryPrefix: process.env.HA_DISCOVERY_PREFIX || 'homeassistant',
   consoTopic: process.env.CONSO_TOPIC || 'evcc2mqtt/config/conso_wh_km',
   pollIntervalMs: Number(process.env.POLL_INTERVAL_MS || 60_000),
+  logLevel: process.env.LOG_LEVEL || 'info',
 };

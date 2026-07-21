@@ -14,7 +14,7 @@ export const METRICS = [
 function buildComponents(config) {
   const components = {};
   for (const metric of METRICS) {
-    const id = `evcc2mqtt_${metric.slug}`;
+    const id = `${config.topicPrefix}_${metric.slug}`;
     const component = {
       platform: 'sensor',
       unique_id: id,
@@ -55,4 +55,8 @@ export function publishDeviceDiscovery(client, config) {
 
 export function publishState(client, config, statePayload) {
   client.publish(`${config.topicPrefix}/sessions`, JSON.stringify(statePayload), { qos: 0, retain: true });
+}
+
+export function publishDebugSessions(client, config, sessions) {
+  client.publish(`${config.topicPrefix}/debug/sessions`, JSON.stringify(sessions), { qos: 0, retain: true });
 }

@@ -10,23 +10,20 @@ export function localDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-export function groupSessionsByDay(sessions) {
-  const byDay = new Map();
-  for (const session of sessions) {
-    const day = session.created.split('T')[0];
-    if (!byDay.has(day)) byDay.set(day, []);
-
-    const solarCharged = round((session.chargedEnergy * session.solarPercentage) / 100);
-    byDay.get(day).push({
-      id: session.id,
-      chargedEnergy: round(session.chargedEnergy),
-      solarCharged,
-      gridCharged: round(session.chargedEnergy - solarCharged),
-      price: round(session.price),
-      co2: round(session.co2PerKWh * session.chargedEnergy),
+export function sessionsForDay(sessions, dayStr) {
+  return sessions
+    .filter((session) => session.created.split('T')[0] === dayStr)
+    .map((session) => {
+      const solarCharged = round((session.chargedEnergy * session.solarPercentage) / 100);
+      return {
+        id: session.id,
+        chargedEnergy: round(session.chargedEnergy),
+        solarCharged,
+        gridCharged: round(session.chargedEnergy - solarCharged),
+        price: round(session.price),
+        co2: round(session.co2PerKWh * session.chargedEnergy),
+      };
     });
-  }
-  return byDay;
 }
 
 export function computeDayAggregate(daySessions, consoWhKm) {

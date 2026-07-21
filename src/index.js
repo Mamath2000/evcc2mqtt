@@ -1,28 +1,32 @@
 import { config } from './config.js';
 import { fetchCurrentMonthSessions } from './evccApi.js';
-import { groupSessionsByDay, computeDayAggregate, localDateKey } from './aggregate.js';
+import { sessionsForDay, computeDayAggregate, localDateKey } from './aggregate.js';
 import { createMqttClient } from './mqttClient.js';
-import { publishDeviceDiscovery, publishState } from './discovery.js';
+import { publishDeviceDiscovery, publishState, publishDebugSessions } from './discovery.js';
 import { createConsumptionTracker } from './consumption.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger(config.logLevel);
 
 async function run(client, consumption) {
   try {
     const sessions = await fetchCurrentMonthSessions(config);
-    const grouped = groupSessionsByDay(sessions);
-
     const today = localDateKey(new Date());
-    const todaySessions = grouped.get(today);
+    const todaySessions = sessionsForDay(sessions, today);
+    publishDebugSessions(client, config, todaySessions);
+    logger.debug(`fetched ${sessions.length} session(s) this month, ${todaySessions.length} for today`);
 
-    if (!todaySessions || todaySessions.length === 0) {
-      console.log(`[evcc2mqtt] no sessions for today (${today}), skipping`);
+    if (todaySessions.length === 0) {
+      logger.info(`no sessions for today (${today}), skipping`);
       return;
     }
 
     const aggregate = computeDayAggregate(todaySessions, consumption.get());
     publishState(client, config, aggregate);
-    console.log(`[evcc2mqtt] published state (${today})`, aggregate);
+    logger.info(`published state (${today})`);
+    logger.debug('aggregate', aggregate);
   } catch (err) {
-    console.error('[evcc2mqtt] run failed:', err);
+    logger.error('run failed:', err);
   }
 }
 
@@ -30,7 +34,7 @@ const client = createMqttClient(config);
 let interval;
 
 client.on('connect', () => {
-  console.log('[evcc2mqtt] connected to MQTT broker');
+  logger.info('connected to MQTT broker');
   publishDeviceDiscovery(client, config);
 
   const consumption = createConsumptionTracker(client, config);
@@ -40,7 +44,7 @@ client.on('connect', () => {
 });
 
 client.on('error', (err) => {
-  console.error('[evcc2mqtt] MQTT error:', err);
+  logger.error('MQTT error:', err);
 });
 
 function shutdown() {
