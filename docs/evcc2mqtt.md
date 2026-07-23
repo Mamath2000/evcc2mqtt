@@ -85,6 +85,7 @@ Tous les topics sont préfixés par `TOPIC_PREFIX` (`evcc2mqtt` par défaut).
 | --- | --- | --- |
 | `{prefix}/status` | `online` / `offline` (LWT MQTT du client) | oui |
 | `{prefix}/sessions` | Indicateurs agrégés du jour, en JSON (voir ci-dessous) | oui |
+| `{prefix}/consumption` | Écho brut de la valeur reçue sur `CONSO_TOPIC` (Wh/km) | oui |
 | `{prefix}/debug/sessions` | Détail brut des sessions du jour (tableau JSON), avant agrégation | oui |
 | `{haDiscoveryPrefix}/device/{prefix}/config` | Message de découverte HA (voir ci-dessous) | oui |
 
@@ -109,6 +110,11 @@ Exemple de payload sur `{prefix}/sessions` :
 [Paramètres du fichier .env](#paramètres-du-fichier-env)) ; tant qu'aucune valeur n'a été reçue,
 cette métrique vaut `0`.
 
+Cette même valeur de consommation est aussi republiée telle quelle (sans recalcul
+hebdomadaire/mensuel/annuel — evcc2mqtt n'a pas accès à la distance parcourue) sur
+`{prefix}/consumption` dès sa réception sur `CONSO_TOPIC`, indépendamment du cycle de
+polling, et exposée comme capteur HA "Consommation véhicule".
+
 ### Intégration Home Assistant (MQTT Discovery)
 
 evcc2mqtt utilise le format **"device discovery"** de Home Assistant : un seul message de
@@ -117,9 +123,11 @@ découverte (retained, publié à la connexion) déclare un device (nom configur
 capteurs (`components`), tous alimentés par l'unique topic d'état `{prefix}/sessions` via des
 `value_template` (ex. `{{ value_json.chargedEnergy | default(0) }}`).
 
-HA crée ainsi automatiquement 10 entités `sensor.*`, une par métrique : énergie chargée, part
-solaire chargée, part réseau chargée, % solaire, prix, prix/kWh, CO2, CO2/kWh, économie
-solaire, prix/100 km. Leur disponibilité suit le topic `{prefix}/status`.
+HA crée ainsi automatiquement 11 entités `sensor.*` (les 10 métriques, en français : Énergie
+chargée, Charge Solaire, Import Réseau, Pourcentage de Solaire, Cout du jour, Prix par kWh, CO2
+du jour, CO2 par kWh, Economie, Prix pour 100Km — plus le capteur Consommation véhicule, qui
+lui lit son propre topic `{prefix}/consumption` au lieu de `{prefix}/sessions`). Leur
+disponibilité suit le topic `{prefix}/status`.
 
 Le topic `{prefix}/debug/sessions` n'est volontairement pas déclaré en découverte HA (pas
 d'entité associée) : il est destiné à l'inspection manuelle (MQTT Explorer, `mosquitto_sub`,

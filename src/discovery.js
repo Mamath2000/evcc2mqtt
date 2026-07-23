@@ -1,15 +1,21 @@
 export const METRICS = [
-  { key: 'chargedEnergy', slug: 'charged_energy', name: 'Charged Energy', unit: 'kWh', deviceClass: 'energy' },
-  { key: 'solarCharged', slug: 'solar_charged', name: 'Solar Charged', unit: 'kWh', deviceClass: 'energy' },
-  { key: 'gridCharged', slug: 'grid_charged', name: 'Grid Charged', unit: 'kWh', deviceClass: 'energy' },
-  { key: 'sessionSolarPercentage', slug: 'solar_percentage', name: 'Solar Percentage', unit: '%' },
-  { key: 'price', slug: 'price', name: 'Charged Price', unit: '€', deviceClass: 'monetary' },
-  { key: 'pricePerKWh', slug: 'price_per_kwh', name: 'Price per kWh', unit: '€/kWh' },
-  { key: 'co2', slug: 'co2', name: 'CO2', unit: 'g', deviceClass: 'weight' },
-  { key: 'co2PerKWh', slug: 'co2_per_kwh', name: 'CO2 per kWh', unit: 'g/kWh' },
-  { key: 'savePrice', slug: 'save_price', name: 'Solar Savings', unit: '€', deviceClass: 'monetary' },
-  { key: 'pricePer100Km', slug: 'price_per_100km', name: 'Price per 100km', unit: '€/100km' },
+  { key: 'chargedEnergy', slug: 'charged_energy', name: 'Énergie chargée', unit: 'kWh', deviceClass: 'energy' },
+  { key: 'solarCharged', slug: 'solar_charged', name: 'Charge Solaire', unit: 'kWh', deviceClass: 'energy' },
+  { key: 'gridCharged', slug: 'grid_charged', name: 'Import Réseau', unit: 'kWh', deviceClass: 'energy' },
+  { key: 'sessionSolarPercentage', slug: 'solar_percentage', name: 'Part de Solaire', unit: '%' },
+  { key: 'price', slug: 'price', name: 'Cout du jour', unit: '€', deviceClass: 'monetary' },
+  { key: 'pricePerKWh', slug: 'price_per_kwh', name: 'Prix par kWh', unit: '€/kWh' },
+  { key: 'co2', slug: 'co2', name: 'CO2 du jour', unit: 'g', deviceClass: 'weight' },
+  { key: 'co2PerKWh', slug: 'co2_per_kwh', name: 'CO2 par kWh', unit: 'g/kWh' },
+  { key: 'savePrice', slug: 'save_price', name: 'Economie', unit: '€', deviceClass: 'monetary' },
+  { key: 'pricePer100Km', slug: 'price_per_100km', name: 'Prix pour 100Km', unit: '€/100km' },
 ];
+
+const CONSUMPTION_SLUG = 'consumption';
+
+export function consumptionStateTopic(config) {
+  return `${config.topicPrefix}/consumption`;
+}
 
 function buildComponents(config) {
   const components = {};
@@ -29,6 +35,22 @@ function buildComponents(config) {
     if (metric.deviceClass) component.device_class = metric.deviceClass;
     components[id] = component;
   }
+
+  // Simple echo of the raw value read from CONSO_TOPIC, published on its own
+  // topic (see consumption.js) so it doesn't depend on today having sessions.
+  const consumptionId = `${config.topicPrefix}_${CONSUMPTION_SLUG}`;
+  components[consumptionId] = {
+    platform: 'sensor',
+    unique_id: consumptionId,
+    default_entity_id: `sensor.${consumptionId}`,
+    name: 'Consommation',
+    state_class: 'measurement',
+    unit_of_measurement: 'Wh/km',
+    state_topic: consumptionStateTopic(config),
+    has_entity_name: true,
+    force_update: true,
+  };
+
   return components;
 }
 

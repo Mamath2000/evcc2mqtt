@@ -66,14 +66,19 @@ client MQTT (`consumption.js`).
   cours, isole celles d'aujourd'hui (heure locale du serveur), et agrège les métriques.
 - Publie un seul message de découverte HA "device discovery" à la connexion (retained) sur
   `homeassistant/device/evcc2mqtt/config`, déclarant un device (nom configurable via
-  `HA_DEVICE_NAME`) avec ses 10 composants
-  (un par métrique), tous alimentés par un unique topic d'état JSON `evcc2mqtt/sessions`
-  (mis à jour à chaque cycle) via des `value_template`.
-- Métriques publiées : `chargedEnergy`, `solarCharged`, `gridCharged`,
-  `sessionSolarPercentage`, `price`, `pricePerKWh`, `co2`, `co2PerKWh`, `savePrice`,
-  `pricePer100Km`.
+  `HA_DEVICE_NAME`) avec ses 11 composants (10 métriques + la consommation véhicule).
+  Les 10 métriques sont alimentées par un unique topic d'état JSON `evcc2mqtt/sessions`
+  (mis à jour à chaque cycle) via des `value_template` ; le capteur de consommation a son
+  propre topic (voir ci-dessous).
+- Métriques publiées (labels HA en français) : `chargedEnergy` (Énergie chargée),
+  `solarCharged` (Charge Solaire), `gridCharged` (Import Réseau), `sessionSolarPercentage`
+  (Pourcentage de Solaire), `price` (Cout du jour), `pricePerKWh` (Prix par kWh), `co2` (CO2 du
+  jour), `co2PerKWh` (CO2 par kWh), `savePrice` (Economie), `pricePer100Km` (Prix pour 100Km).
 - `pricePer100Km` nécessite une consommation véhicule (Wh/km) : publier une valeur numérique
   retained sur `CONSO_TOPIC`. Tant qu'aucune valeur n'a été reçue, cette métrique vaut `0`.
+- Cette même valeur de consommation est aussi republiée telle quelle (pas de recalcul
+  hebdo/mensuel/annuel) sur `evcc2mqtt/consumption`, exposée comme capteur HA "Consommation
+  véhicule" (Wh/km), dès sa réception sur `CONSO_TOPIC` — indépendamment du cycle de polling.
 - Si aucune session n'existe encore aujourd'hui, le cycle est simplement ignoré (les dernières
   valeurs retained restent affichées dans HA).
 - Publie aussi, à chaque cycle, le détail brut des sessions du jour (tableau JSON) sur un topic

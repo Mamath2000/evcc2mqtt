@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { METRICS, buildDeviceDiscoveryPayload, publishState, publishDebugSessions } from '../src/discovery.js';
+import { METRICS, buildDeviceDiscoveryPayload, publishState, publishDebugSessions, consumptionStateTopic } from '../src/discovery.js';
 
 const config = { topicPrefix: 'evcc2mqtt', haDiscoveryPrefix: 'homeassistant' };
 
@@ -9,13 +9,24 @@ function createFakeMqttClient() {
   return { published, publish: (topic, payload, opts) => published.push({ topic, payload, opts }) };
 }
 
-test('buildDeviceDiscoveryPayload declares one device with one component per metric', () => {
+test('buildDeviceDiscoveryPayload declares one device with one component per metric plus the consumption echo', () => {
   const payload = buildDeviceDiscoveryPayload(config);
 
   assert.deepEqual(payload.device.identifiers, ['evcc2mqtt']);
   assert.equal(payload.availability[0].topic, 'evcc2mqtt/status');
   assert.equal(payload.state_topic, 'evcc2mqtt/sessions');
-  assert.equal(Object.keys(payload.components).length, METRICS.length);
+  assert.equal(Object.keys(payload.components).length, METRICS.length + 1);
+});
+
+test('the consumption component reads from its own topic, not the shared sessions one', () => {
+  const payload = buildDeviceDiscoveryPayload(config);
+  const component = payload.components['evcc2mqtt_consumption'];
+
+  assert.ok(component);
+  assert.equal(component.state_topic, consumptionStateTopic(config));
+  assert.equal(component.state_topic, 'evcc2mqtt/consumption');
+  assert.equal(component.unit_of_measurement, 'Wh/km');
+  assert.equal(component.value_template, undefined);
 });
 
 test('each component reads its value from the shared state topic via value_template', () => {
