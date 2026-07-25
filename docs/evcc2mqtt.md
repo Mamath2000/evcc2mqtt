@@ -36,7 +36,8 @@ flow sans réel bénéfice au quotidien.
 Au démarrage, puis toutes les `POLL_INTERVAL_MS` (1 minute par défaut) :
 
 1. il appelle l'API evcc pour récupérer les sessions de charge du **mois en cours** ;
-2. il filtre ces sessions pour ne garder que celles d'**aujourd'hui** (date locale du serveur) ;
+2. il filtre ces sessions pour ne garder que celles d'**aujourd'hui**, au sens du fuseau
+   `APP_TIMEZONE` (voir [Fuseau horaire](#fuseau-horaire)) ;
 3. il publie la liste brute des sessions du jour sur un topic MQTT de debug ;
 4. si au moins une session existe pour aujourd'hui, il agrège ces sessions en un seul jeu
    d'indicateurs journaliers (énergie chargée, part solaire/réseau, prix, CO2, économie
@@ -44,11 +45,34 @@ Au démarrage, puis toutes les `POLL_INTERVAL_MS` (1 minute par défaut) :
 5. il publie ces indicateurs en MQTT, sous une forme exploitable directement par Home Assistant
    via MQTT Discovery (voir plus bas).
 
-S'il n'y a encore aucune session aujourd'hui (par exemple juste après minuit), le cycle est
-simplement ignoré : les dernières valeurs *retained* restent affichées telles quelles dans HA.
+S'il n'y a encore aucune session aujourd'hui (par exemple juste après minuit), les indicateurs
+sont quand même publiés, à zéro : `computeDayAggregate([], ...)` retourne explicitement des
+zéros plutôt que `NaN` (0/0), justement pour que ce cas soit publiable tel quel. Ne pas publier
+dans ce cas laisserait le topic *retained* à la dernière valeur figée de la veille, que HA
+enregistrerait comme si elle appartenait au nouveau jour — c'est le bug qui a motivé ce choix.
 
 Le programme tourne en continu (`node src/index.js`, cf. [Make et tests](#make-et-tests)) ; il
 n'y a pas de cron externe, la temporisation est gérée en interne via `setInterval`.
+
+## Fuseau horaire
+
+"Aujourd'hui" et "le mois en cours" sont déterminés via `APP_TIMEZONE` (`Europe/Paris` par
+défaut), avec `Intl.DateTimeFormat`, et **non** via l'horloge système du process
+(`getFullYear`/`getMonth`/`getDate`, qui dépendent du `TZ` de l'OS/conteneur).
+
+C'est un correctif suite à un bug observé en production : un conteneur Docker tourne en UTC
+par défaut, donc sans ce mécanisme, le programme continuait de croire qu'on était "hier"
+jusqu'à minuit UTC — soit 2h du matin heure de Paris en été. Pendant ce créneau, aucune session
+evcc n'est encore taguée "aujourd'hui" (au sens UTC), donc `run()` republie la dernière valeur
+connue de la veille (le dernier état MQTT retenu) sans la rafraîchir. Home Assistant, qui
+horodate chaque état à sa réception, enregistrait donc le total figé de la veille comme
+appartenant au nouveau jour (Paris) dans son historique — exactement le décalage observé sur
+les requêtes LTSS/continuous aggregate côté HA.
+
+`zonedDateParts`/`localDateKey` (`src/aggregate.js`) et `fetchCurrentMonthSessions`
+(`src/evccApi.js`) utilisent tous deux `APP_TIMEZONE`, donc ce correctif couvre à la fois le
+calcul du jour courant et le choix du mois interrogé auprès de l'API evcc (pertinent le soir du
+dernier jour du mois).
 
 ## L'API evcc appelée
 
@@ -234,10 +258,10 @@ Deux fichiers d'exemple sont fournis, tous deux pilotés par `env_file: ./.env` 
 - `docker-compose.yml` : tire l'image publiée `mathmath350/evcc2mqtt:latest`.
 - `docker-compose.example.yml` : build depuis le `Dockerfile` local (`build: context: .`).
 
-Les deux fixent `TZ=Europe/Paris` sur le conteneur. C'est important : `sessionsForDay`
-détermine "aujourd'hui" via `localDateKey(new Date())`, donc à partir de l'heure **locale** du
-processus. Un conteneur Docker tourne par défaut en UTC ; sans ce `TZ`, le changement de jour
-se ferait à minuit UTC (soit 1h ou 2h du matin heure française) au lieu de minuit heure locale.
+Les deux fixent `TZ=Europe/Paris` sur le conteneur, surtout pour que les logs affichent une
+heure locale lisible. Ce n'est plus le seul garde-fou pour déterminer "aujourd'hui" : voir
+[Fuseau horaire](#fuseau-horaire), qui s'appuie sur `APP_TIMEZONE` indépendamment du `TZ` du
+conteneur.
 
 ## Paramètres du fichier .env
 
@@ -254,6 +278,7 @@ se ferait à minuit UTC (soit 1h ou 2h du matin heure française) au lieu de min
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km (payload numérique) | `evcc2mqtt/config/conso_wh_km` |
 | `POLL_INTERVAL_MS` | Fréquence de rafraîchissement/republication des indicateurs | `60000` (1 min) |
 | `LOG_LEVEL` | Verbosité des logs : `error`, `info`, `debug` | `info` |
+| `APP_TIMEZONE` | Fuseau IANA utilisé pour déterminer "aujourd'hui" et le mois en cours | `Europe/Paris` |
 
 ## Limitations connues
 

@@ -3,10 +3,24 @@ export function round(value, decimals = 3) {
   return Math.round(value * factor) / factor;
 }
 
-export function localDateKey(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+// Uses an explicit IANA zone instead of the process's local time (`getFullYear`/`getMonth`/
+// `getDate`), which otherwise depends on the host/container TZ setting. Without this, a
+// container running in UTC (the Docker default) keeps believing it's "yesterday" until 00:00
+// UTC — 02:00 in Paris during summer — and the previous day's frozen total gets recorded by HA
+// as if it belonged to the new day.
+export function zonedDateParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const byType = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return { year: byType.year, month: byType.month, day: byType.day };
+}
+
+export function localDateKey(date, timeZone) {
+  const { year, month, day } = zonedDateParts(date, timeZone);
   return `${year}-${month}-${day}`;
 }
 
@@ -38,6 +52,24 @@ export function computeDayAggregate(daySessions, consoWhKm) {
     },
     { chargedEnergy: 0, solarCharged: 0, gridCharged: 0, price: 0, co2: 0 },
   );
+
+  // No sessions yet today: report zeros instead of NaN (0/0) so the retained
+  // MQTT state actually resets at the start of each day, rather than the
+  // caller skipping the publish and leaving yesterday's frozen total in place.
+  if (merged.chargedEnergy === 0) {
+    return {
+      chargedEnergy: 0,
+      solarCharged: 0,
+      gridCharged: 0,
+      sessionSolarPercentage: 0,
+      price: 0,
+      co2: 0,
+      pricePerKWh: 0,
+      co2PerKWh: 0,
+      savePrice: 0,
+      pricePer100Km: 0,
+    };
+  }
 
   const pricePerKWh = round(merged.price / merged.chargedEnergy, 3);
   // A 100% solar day has no grid-charged energy, so this stays undefined without a guard.

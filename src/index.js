@@ -11,20 +11,24 @@ const logger = createLogger(config.logLevel);
 async function run(client, consumption) {
   try {
     const sessions = await fetchCurrentMonthSessions(config);
-    const today = localDateKey(new Date());
+    const today = localDateKey(new Date(), config.timeZone);
     const todaySessions = sessionsForDay(sessions, today);
     publishDebugSessions(client, config, todaySessions);
     logger.debug(`fetched ${sessions.length} session(s) this month, ${todaySessions.length} for today`);
 
-    if (todaySessions.length === 0) {
-      logger.info(`no sessions for today (${today}), skipping`);
-      return;
-    }
-
+    // Always publish, even with zero sessions: otherwise the retained MQTT
+    // state keeps showing yesterday's frozen total until the first session
+    // of the new day appears, and HA records that stale value as if it
+    // belonged to today.
     const aggregate = computeDayAggregate(todaySessions, consumption.get());
     publishState(client, config, aggregate);
-    logger.info(`published state (${today})`);
-    logger.debug('aggregate', aggregate);
+
+    if (todaySessions.length === 0) {
+      logger.info(`no sessions for today (${today}) yet, published zeroed state`);
+    } else {
+      logger.info(`published state (${today})`);
+      logger.debug('aggregate', aggregate);
+    }
   } catch (err) {
     logger.error('run failed:', err);
   }

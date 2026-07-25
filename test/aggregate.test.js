@@ -1,15 +1,34 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { round, localDateKey, sessionsForDay, computeDayAggregate } from '../src/aggregate.js';
+import { round, localDateKey, zonedDateParts, sessionsForDay, computeDayAggregate } from '../src/aggregate.js';
 
 test('round rounds to the given number of decimals', () => {
   assert.equal(round(1.23456, 3), 1.235);
   assert.equal(round(1.2), 1.2);
 });
 
-test('localDateKey formats using local date parts, not UTC', () => {
-  assert.equal(localDateKey(new Date(2026, 6, 21)), '2026-07-21');
-  assert.equal(localDateKey(new Date(2026, 0, 5)), '2026-01-05');
+test('localDateKey formats a UTC instant according to the given IANA zone', () => {
+  // 10:00 UTC is the same calendar day everywhere relevant here.
+  assert.equal(localDateKey(new Date('2026-07-21T10:00:00Z'), 'Europe/Paris'), '2026-07-21');
+  assert.equal(localDateKey(new Date('2026-07-21T10:00:00Z'), 'UTC'), '2026-07-21');
+});
+
+test('localDateKey does not depend on the process/container clock timezone', () => {
+  // Regression test for the production bug: 23:30 UTC on the 24th is already
+  // 01:30 CEST on the 25th in Paris. A container running in UTC (no TZ set)
+  // must not keep reporting "24" here, or the previous day's frozen total
+  // gets recorded by HA as if it belonged to the new day.
+  const midnightBoundary = new Date('2026-07-24T23:30:00Z');
+  assert.equal(localDateKey(midnightBoundary, 'UTC'), '2026-07-24');
+  assert.equal(localDateKey(midnightBoundary, 'Europe/Paris'), '2026-07-25');
+});
+
+test('zonedDateParts exposes the year/month/day used to pick the evcc API month', () => {
+  // 31 Jul 23:30 UTC is already 1 Aug in Paris: fetchCurrentMonthSessions must
+  // query August, not July, or it would miss the day's own sessions entirely.
+  const monthBoundary = new Date('2026-07-31T23:30:00Z');
+  assert.deepEqual(zonedDateParts(monthBoundary, 'UTC'), { year: '2026', month: '07', day: '31' });
+  assert.deepEqual(zonedDateParts(monthBoundary, 'Europe/Paris'), { year: '2026', month: '08', day: '01' });
 });
 
 test('sessionsForDay keeps only the requested day and splits solar/grid energy', () => {
@@ -65,4 +84,17 @@ test('computeDayAggregate does not divide by zero on a 100% solar day', () => {
   assert.equal(aggregate.gridCharged, 0);
   assert.equal(Number.isFinite(aggregate.savePrice), true);
   assert.equal(aggregate.savePrice, 0);
+});
+
+test('computeDayAggregate returns all zeros (not NaN) when there are no sessions yet today', () => {
+  // Regression test: the caller must be able to publish this as-is so the
+  // retained MQTT state resets at the start of the day, instead of skipping
+  // the publish and leaving yesterday's frozen total in place.
+  const aggregate = computeDayAggregate([], 165);
+
+  for (const value of Object.values(aggregate)) {
+    assert.equal(typeof value, 'number');
+    assert.equal(Number.isNaN(value), false);
+    assert.equal(value, 0);
+  }
 });

@@ -59,11 +59,15 @@ client MQTT (`consumption.js`).
 | `CONSO_TOPIC` | Topic MQTT d'où lire la consommation véhicule fixe, en Wh/km | `evcc2mqtt/config/conso_wh_km` |
 | `POLL_INTERVAL_MS` | Fréquence de rafraîchissement/republication | `60000` (1 min) |
 | `LOG_LEVEL` | Verbosité des logs : `error`, `info`, `debug` | `info` |
+| `APP_TIMEZONE` | Fuseau IANA utilisé pour déterminer "aujourd'hui" et le mois en cours | `Europe/Paris` |
 
 ## Fonctionnement
 
 - Au démarrage puis toutes les `POLL_INTERVAL_MS` : récupère les sessions evcc du mois en
-  cours, isole celles d'aujourd'hui (heure locale du serveur), et agrège les métriques.
+  cours, isole celles d'aujourd'hui, et agrège les métriques. "Aujourd'hui" et "le mois en
+  cours" sont déterminés via le fuseau `APP_TIMEZONE`, **pas** l'horloge système du
+  process/conteneur (qui tourne en UTC par défaut sous Docker) — voir
+  [Fuseau horaire](#fuseau-horaire).
 - Publie un seul message de découverte HA "device discovery" à la connexion (retained) sur
   `homeassistant/device/evcc2mqtt/config`, déclarant un device (nom configurable via
   `HA_DEVICE_NAME`) avec ses 11 composants (10 métriques + la consommation véhicule).
@@ -79,11 +83,22 @@ client MQTT (`consumption.js`).
 - Cette même valeur de consommation est aussi republiée telle quelle (pas de recalcul
   hebdo/mensuel/annuel) sur `evcc2mqtt/consumption`, exposée comme capteur HA "Consommation
   véhicule" (Wh/km), dès sa réception sur `CONSO_TOPIC` — indépendamment du cycle de polling.
-- Si aucune session n'existe encore aujourd'hui, le cycle est simplement ignoré (les dernières
-  valeurs retained restent affichées dans HA).
+- Si aucune session n'existe encore aujourd'hui, l'état publié est remis à zéro (et non pas
+  laissé tel quel) : sinon le topic retained garderait la dernière valeur figée de la veille,
+  que HA enregistrerait comme si elle appartenait au nouveau jour.
 - Publie aussi, à chaque cycle, le détail brut des sessions du jour (tableau JSON) sur un topic
   de debug `evcc2mqtt/debug/sessions`, pour inspecter facilement les sessions utilisées dans le
   calcul (utile avec MQTT Explorer par exemple).
+
+## Fuseau horaire
+
+`sessionsForDay`/`fetchCurrentMonthSessions` déterminent "aujourd'hui" et "le mois en cours" à
+partir de `APP_TIMEZONE` (`Europe/Paris` par défaut), via `Intl.DateTimeFormat`, et non via
+l'horloge système du process. C'est volontaire : un conteneur Docker tourne en UTC par défaut,
+et s'appuyer sur l'heure système ferait basculer "aujourd'hui" à minuit UTC (2h du matin heure
+de Paris en été) au lieu de minuit heure locale. Sans ce correctif, la valeur figée de la
+veille (dernier état retenu par MQTT) se retrouve enregistrée par HA comme si elle appartenait
+au nouveau jour, pendant les ~2h qui suivent minuit UTC.
 
 ## Docker et release
 
@@ -113,10 +128,11 @@ Deux exemples sont fournis :
 - `docker-compose.yml` : utilise l'image publiée (`mathmath350/evcc2mqtt:latest`).
 - `docker-compose.example.yml` : build depuis les sources locales (`build: context: .`).
 
-Les deux lisent la config depuis `./.env` (`env_file`) et fixent `TZ=Europe/Paris` — **important**
-car `sessionsForDay` détermine "aujourd'hui" à partir de l'heure locale du conteneur ; sans ce
-`TZ`, un conteneur Docker tourne par défaut en UTC et le changement de jour se ferait à minuit
-UTC au lieu de minuit heure locale. Adapte cette valeur à ton fuseau si besoin.
+Les deux lisent la config depuis `./.env` (`env_file`) et fixent `TZ=Europe/Paris` pour que les
+horodatages de logs soient lisibles en heure locale. Ce n'est plus le seul garde-fou pour le
+calcul du jour courant (voir [Fuseau horaire](#fuseau-horaire) : `APP_TIMEZONE`, indépendant de
+`TZ`, s'en charge), mais autant garder les deux cohérents. Adapte `TZ` et `APP_TIMEZONE` à ton
+fuseau si besoin.
 
 ```bash
 cp .env.example .env   # puis éditer .env

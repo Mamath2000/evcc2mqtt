@@ -1,3 +1,5 @@
+import { zonedDateParts } from './aggregate.js';
+
 export async function fetchSessions(baseUrl, lang, month, year) {
   const url = `${baseUrl}/api/sessions?lang=${lang}&month=${month}&year=${year}`;
   const res = await fetch(url);
@@ -8,6 +10,6 @@ export async function fetchSessions(baseUrl, lang, month, year) {
 }
 
 export async function fetchCurrentMonthSessions(config) {
-  const now = new Date();
-  return fetchSessions(config.evcc.baseUrl, config.evcc.lang, now.getMonth() + 1, now.getFullYear());
+  const { year, month } = zonedDateParts(new Date(), config.timeZone);
+  return fetchSessions(config.evcc.baseUrl, config.evcc.lang, Number(month), Number(year));
 }

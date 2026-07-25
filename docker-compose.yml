@@ -13,9 +13,9 @@ services:
       - ./.env
 
     environment:
-      # Important : la logique "aujourd'hui" (sessionsForDay) se base sur
-      # l'heure locale du conteneur, pas UTC. Sans ce TZ, le passage à un
-      # nouveau jour se ferait à minuit UTC au lieu de minuit heure locale.
+      # Pour des logs lisibles en heure locale. Le calcul du jour courant ne
+      # dépend plus de ce TZ (voir APP_TIMEZONE dans .env.example), mais
+      # autant garder les deux cohérents.
       - TZ=Europe/Paris
 
     # Notes réseau :
