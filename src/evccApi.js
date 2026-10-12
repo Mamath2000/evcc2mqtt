@@ -1,4 +1,4 @@
-import { zonedDateParts } from './aggregate.js';
+import { localDateKey } from './aggregate.js';
 
 export async function fetchSessions(baseUrl, lang, month, year) {
   const url = `${baseUrl}/api/sessions?lang=${lang}&month=${month}&year=${year}`;
@@ -9,7 +9,14 @@ export async function fetchSessions(baseUrl, lang, month, year) {
   return res.json();
 }
 
+// Fetches the calendar month a given 'YYYY-MM-DD' key falls in, so callers can
+// request the right month regardless of whether the day is "today" or not
+// (e.g. "yesterday" when today is the 1st, which falls in the previous month).
+export async function fetchSessionsForMonth(config, dateKey) {
+  const [year, month] = dateKey.split('-').map(Number);
+  return fetchSessions(config.evcc.baseUrl, config.evcc.lang, month, year);
+}
+
 export async function fetchCurrentMonthSessions(config) {
-  const { year, month } = zonedDateParts(new Date(), config.timeZone);
-  return fetchSessions(config.evcc.baseUrl, config.evcc.lang, Number(month), Number(year));
+  return fetchSessionsForMonth(config, localDateKey(new Date(), config.timeZone));
 }

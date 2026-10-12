@@ -39,11 +39,15 @@ Au démarrage, puis toutes les `POLL_INTERVAL_MS` (1 minute par défaut) :
 2. il filtre ces sessions pour ne garder que celles d'**aujourd'hui**, au sens du fuseau
    `APP_TIMEZONE` (voir [Fuseau horaire](#fuseau-horaire)) ;
 3. il publie la liste brute des sessions du jour sur un topic MQTT de debug ;
-4. si au moins une session existe pour aujourd'hui, il agrège ces sessions en un seul jeu
-   d'indicateurs journaliers (énergie chargée, part solaire/réseau, prix, CO2, économie
-   solaire, prix au 100 km) ;
-5. il publie ces indicateurs en MQTT, sous une forme exploitable directement par Home Assistant
-   via MQTT Discovery (voir plus bas).
+4. il détermine la date d'**hier** (`previousDateKey`) et récupère les sessions de ce jour-là —
+   en réutilisant les sessions du mois en cours déjà récupérées à l'étape 1, sauf si hier tombe
+   dans le mois précédent (le 1er du mois), auquel cas un second appel à l'API evcc est fait pour
+   ce mois-là ;
+5. il agrège séparément les sessions d'aujourd'hui et celles d'hier en deux jeux d'indicateurs
+   journaliers (énergie chargée, part solaire/réseau, prix, CO2, économie solaire, prix au
+   100 km) ;
+6. il publie ces deux jeux d'indicateurs en MQTT, sous une forme exploitable directement par
+   Home Assistant via MQTT Discovery (voir plus bas).
 
 S'il n'y a encore aucune session aujourd'hui (par exemple juste après minuit), les indicateurs
 sont quand même publiés, à zéro : `computeDayAggregate([], ...)` retourne explicitement des
@@ -73,6 +77,12 @@ les requêtes LTSS/continuous aggregate côté HA.
 (`src/evccApi.js`) utilisent tous deux `APP_TIMEZONE`, donc ce correctif couvre à la fois le
 calcul du jour courant et le choix du mois interrogé auprès de l'API evcc (pertinent le soir du
 dernier jour du mois).
+
+Le jour d'"hier" est dérivé du jour courant via `previousDateKey` (`src/aggregate.js`), qui
+opère sur le triplet année/mois/jour déjà résolu par `APP_TIMEZONE` plutôt que de soustraire
+24h à un instant zoné — ce qui reste correct autour des changements d'heure (DST) et des
+changements de mois/année. Quand hier tombe dans le mois précédent, `fetchSessionsForMonth`
+(`src/evccApi.js`) va chercher ce mois-là spécifiquement auprès de l'API evcc.
 
 ## L'API evcc appelée
 
@@ -108,12 +118,13 @@ Tous les topics sont préfixés par `TOPIC_PREFIX` (`evcc2mqtt` par défaut).
 | Topic | Contenu | Retained |
 | --- | --- | --- |
 | `{prefix}/status` | `online` / `offline` (LWT MQTT du client) | oui |
-| `{prefix}/sessions` | Indicateurs agrégés du jour, en JSON (voir ci-dessous) | oui |
+| `{prefix}/today` | Indicateurs agrégés du jour, en JSON (voir ci-dessous) | oui |
+| `{prefix}/yesterday` | Mêmes indicateurs, agrégés pour la veille | oui |
 | `{prefix}/consumption` | Écho brut de la valeur reçue sur `CONSO_TOPIC` (Wh/km) | oui |
 | `{prefix}/debug/sessions` | Détail brut des sessions du jour (tableau JSON), avant agrégation | oui |
 | `{haDiscoveryPrefix}/device/{prefix}/config` | Message de découverte HA (voir ci-dessous) | oui |
 
-Exemple de payload sur `{prefix}/sessions` :
+Exemple de payload sur `{prefix}/today` (`{prefix}/yesterday` a exactement la même forme) :
 
 ```json
 {
@@ -144,18 +155,28 @@ polling, et exposée comme capteur HA "Consommation véhicule".
 evcc2mqtt utilise le format **"device discovery"** de Home Assistant : un seul message de
 découverte (retained, publié à la connexion) déclare un device (nom configurable via
 `HA_DEVICE_NAME`, `EVCC (MQTT)` par défaut) avec l'ensemble de ses
-capteurs (`components`), tous alimentés par l'unique topic d'état `{prefix}/sessions` via des
+capteurs (`components`), tous alimentés par l'unique topic d'état `{prefix}/today` via des
 `value_template` (ex. `{{ value_json.chargedEnergy | default(0) }}`).
 
 HA crée ainsi automatiquement 11 entités `sensor.*` (les 10 métriques, en français : Énergie
 chargée, Charge Solaire, Import Réseau, Pourcentage de Solaire, Cout du jour, Prix par kWh, CO2
 du jour, CO2 par kWh, Economie, Prix pour 100Km — plus le capteur Consommation véhicule, qui
-lui lit son propre topic `{prefix}/consumption` au lieu de `{prefix}/sessions`). Leur
+lui lit son propre topic `{prefix}/consumption` au lieu de `{prefix}/today`). Leur
 disponibilité suit le topic `{prefix}/status`.
 
-Le topic `{prefix}/debug/sessions` n'est volontairement pas déclaré en découverte HA (pas
-d'entité associée) : il est destiné à l'inspection manuelle (MQTT Explorer, `mosquitto_sub`,
-etc.) plutôt qu'à l'affichage dans HA.
+Il n'y a pas d'entité `sensor.*` séparée pour la veille : chacune des 10 entités de métrique
+expose plutôt un **attribut d'état `yesterday`** portant la valeur de la même métrique la
+veille, via `json_attributes_topic: {prefix}/yesterday` et un `json_attributes_template` du
+type `{"yesterday": {{ value_json.chargedEnergy | default(0) }}}`. Cette valeur est donc
+consultable dans HA comme attribut de l'entité (ex. `state_attr('sensor.evcc2mqtt_charged_energy',
+'yesterday')`), sans dupliquer le nombre de capteurs. Le capteur Consommation véhicule n'a pas
+d'équivalent "hier" (c'est un simple écho de la dernière valeur connue, pas un indicateur
+journalier).
+
+Les topics `{prefix}/debug/sessions` et `{prefix}/yesterday` ne sont volontairement pas déclarés
+comme `state_topic` d'une entité en découverte HA : le premier est destiné à l'inspection
+manuelle (MQTT Explorer, `mosquitto_sub`, etc.), le second sert uniquement de source pour
+l'attribut `yesterday` décrit ci-dessus.
 
 ### Robustesse de la connexion MQTT (LWT)
 
@@ -205,13 +226,15 @@ intégré à Node.js (`node:test`) — aucune dépendance de test supplémentair
 Chaque module métier a son fichier de test dédié :
 
 - `aggregate.test.js` : logique de regroupement/agrégation journalière (`sessionsForDay`,
-  `computeDayAggregate`), avec des valeurs de référence reprenant les formules du flow
+  `computeDayAggregate`), le calcul de la veille (`previousDateKey`, y compris les
+  changements de mois/année), avec des valeurs de référence reprenant les formules du flow
   Node-RED d'origine, ainsi que les cas limites (pas de session, journée 100 % solaire).
 - `discovery.test.js` : structure du message de découverte HA (device, availability,
-  components) et des payloads publiés (`publishState`, `publishDebugSessions`), via un faux
+  components, attribut `yesterday` par métrique) et des payloads publiés
+  (`publishTodayState`, `publishYesterdayState`, `publishDebugSessions`), via un faux
   client MQTT qui capture les appels `publish`.
 - `evccApi.test.js` : appels à l'API evcc avec `fetch` mocké (URL générée, gestion des réponses
-  en erreur).
+  en erreur, sélection du mois via `fetchSessionsForMonth`).
 - `consumption.test.js` : suivi de la consommation véhicule reçue par MQTT, via un faux client
   MQTT (`EventEmitter`) simulant `subscribe`/`message`.
 - `logger.test.js` : filtrage des logs selon `LOG_LEVEL`.
@@ -282,8 +305,11 @@ conteneur.
 
 ## Limitations connues
 
-- Seule la journée en cours est suivie : il n'y a pas de capteur "hier" séparé, l'historique
-  est géré par HA (recorder/statistics) à partir des mises à jour reçues, pas par le programme.
+- Au-delà d'aujourd'hui et d'hier, il n'y a pas de capteur/attribut par jour : l'historique plus
+  ancien est géré par HA (recorder/statistics) à partir des mises à jour reçues, pas par le
+  programme.
+- `pricePer100Km` sur `{prefix}/yesterday` est calculé avec la consommation véhicule **actuelle**
+  (`CONSO_TOPIC`), pas celle d'hier — evcc2mqtt ne conserve pas d'historique de consommation.
 - La consommation véhicule (`CONSO_TOPIC`) est une valeur unique et fixe, pas une table
   mensuelle comme dans l'ancien flow Node-RED : à revoir plus tard si besoin d'un historique de
   consommation par mois.

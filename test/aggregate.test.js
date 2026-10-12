@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { round, localDateKey, zonedDateParts, sessionsForDay, computeDayAggregate } from '../src/aggregate.js';
+import { round, localDateKey, previousDateKey, zonedDateParts, sessionsForDay, computeDayAggregate } from '../src/aggregate.js';
 
 test('round rounds to the given number of decimals', () => {
   assert.equal(round(1.23456, 3), 1.235);
@@ -21,6 +21,15 @@ test('localDateKey does not depend on the process/container clock timezone', () 
   const midnightBoundary = new Date('2026-07-24T23:30:00Z');
   assert.equal(localDateKey(midnightBoundary, 'UTC'), '2026-07-24');
   assert.equal(localDateKey(midnightBoundary, 'Europe/Paris'), '2026-07-25');
+});
+
+test('previousDateKey returns the calendar day before', () => {
+  assert.equal(previousDateKey('2026-07-21'), '2026-07-20');
+});
+
+test('previousDateKey rolls over month and year boundaries', () => {
+  assert.equal(previousDateKey('2026-08-01'), '2026-07-31');
+  assert.equal(previousDateKey('2026-01-01'), '2025-12-31');
 });
 
 test('zonedDateParts exposes the year/month/day used to pick the evcc API month', () => {

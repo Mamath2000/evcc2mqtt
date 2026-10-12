@@ -24,6 +24,16 @@ export function localDateKey(date, timeZone) {
   return `${year}-${month}-${day}`;
 }
 
+// Operates on the calendar date itself (via Date.UTC, which normalizes day=0
+// into the last day of the previous month/year) rather than subtracting 24h
+// from a zoned instant, so it stays correct across DST transitions and month/
+// year boundaries.
+export function previousDateKey(dateKey) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day - 1));
+  return localDateKey(date, 'UTC');
+}
+
 export function sessionsForDay(sessions, dayStr) {
   return sessions
     .filter((session) => session.created.split('T')[0] === dayStr)

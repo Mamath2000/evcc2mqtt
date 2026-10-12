@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { METRICS, buildDeviceDiscoveryPayload, publishState, publishDebugSessions, consumptionStateTopic } from '../src/discovery.js';
+import {
+  METRICS,
+  buildDeviceDiscoveryPayload,
+  publishTodayState,
+  publishYesterdayState,
+  publishDebugSessions,
+  consumptionStateTopic,
+  todayStateTopic,
+  yesterdayStateTopic,
+} from '../src/discovery.js';
 
 const config = { topicPrefix: 'evcc2mqtt', haDiscoveryPrefix: 'homeassistant' };
 
@@ -14,7 +23,7 @@ test('buildDeviceDiscoveryPayload declares one device with one component per met
 
   assert.deepEqual(payload.device.identifiers, ['evcc2mqtt']);
   assert.equal(payload.availability[0].topic, 'evcc2mqtt/status');
-  assert.equal(payload.state_topic, 'evcc2mqtt/sessions');
+  assert.equal(payload.state_topic, 'evcc2mqtt/today');
   assert.equal(Object.keys(payload.components).length, METRICS.length + 1);
 });
 
@@ -41,6 +50,19 @@ test('each component reads its value from the shared state topic via value_templ
   }
 });
 
+test('each metric component exposes a "yesterday" attribute sourced from the yesterday topic', () => {
+  const payload = buildDeviceDiscoveryPayload(config);
+
+  for (const metric of METRICS) {
+    const component = payload.components[`evcc2mqtt_${metric.slug}`];
+    assert.equal(component.json_attributes_topic, 'evcc2mqtt/yesterday');
+    assert.equal(component.json_attributes_template, `{"yesterday": {{ value_json.${metric.key} | default(0) }}}`);
+  }
+
+  const consumptionComponent = payload.components['evcc2mqtt_consumption'];
+  assert.equal(consumptionComponent.json_attributes_topic, undefined);
+});
+
 test('component ids are namespaced by the configured topic prefix', () => {
   const other = buildDeviceDiscoveryPayload({ ...config, topicPrefix: 'custom' });
   assert.deepEqual(other.device.identifiers, ['custom']);
@@ -55,14 +77,30 @@ test('device name defaults to "EVCC (MQTT)" and is overridable via config.haDevi
   assert.equal(customPayload.device.name, 'My EVCC');
 });
 
-test('publishState publishes the aggregate as retained JSON on the sessions topic', () => {
+test('publishTodayState publishes the aggregate as retained JSON on the today topic', () => {
   const client = createFakeMqttClient();
-  publishState(client, config, { chargedEnergy: 10 });
+  publishTodayState(client, config, { chargedEnergy: 10 });
 
   assert.equal(client.published.length, 1);
-  assert.equal(client.published[0].topic, 'evcc2mqtt/sessions');
+  assert.equal(client.published[0].topic, 'evcc2mqtt/today');
   assert.deepEqual(JSON.parse(client.published[0].payload), { chargedEnergy: 10 });
   assert.equal(client.published[0].opts.retain, true);
+});
+
+test('publishYesterdayState publishes the aggregate as retained JSON on the yesterday topic', () => {
+  const client = createFakeMqttClient();
+  publishYesterdayState(client, config, { chargedEnergy: 8 });
+
+  assert.equal(client.published.length, 1);
+  assert.equal(client.published[0].topic, 'evcc2mqtt/yesterday');
+  assert.deepEqual(JSON.parse(client.published[0].payload), { chargedEnergy: 8 });
+  assert.equal(client.published[0].opts.retain, true);
+});
+
+test('todayStateTopic and yesterdayStateTopic are namespaced by the configured topic prefix', () => {
+  assert.equal(todayStateTopic(config), 'evcc2mqtt/today');
+  assert.equal(yesterdayStateTopic(config), 'evcc2mqtt/yesterday');
+  assert.equal(todayStateTopic({ ...config, topicPrefix: 'custom' }), 'custom/today');
 });
 
 test('publishDebugSessions publishes the raw session list as retained JSON on the debug topic', () => {

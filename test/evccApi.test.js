@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchSessions, fetchCurrentMonthSessions } from '../src/evccApi.js';
+import { fetchSessions, fetchCurrentMonthSessions, fetchSessionsForMonth } from '../src/evccApi.js';
 import { zonedDateParts } from '../src/aggregate.js';
 
 test('fetchSessions builds the expected evcc URL and returns the parsed JSON body', async (t) => {
@@ -39,4 +39,17 @@ test('fetchCurrentMonthSessions requests the current calendar month in the confi
 
   assert.equal(calls.length, 1);
   assert.match(calls[0], new RegExp(`month=${Number(month)}&year=${year}$`));
+});
+
+test('fetchSessionsForMonth requests the month/year encoded in a YYYY-MM-DD key', async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    calls.push(url);
+    return { ok: true, json: async () => [] };
+  });
+
+  await fetchSessionsForMonth({ evcc: { baseUrl: 'http://evcc.local:7070', lang: 'fr' } }, '2026-07-31');
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0], 'http://evcc.local:7070/api/sessions?lang=fr&month=7&year=2026');
 });

@@ -13,6 +13,14 @@ export const METRICS = [
 
 const CONSUMPTION_SLUG = 'consumption';
 
+export function todayStateTopic(config) {
+  return `${config.topicPrefix}/today`;
+}
+
+export function yesterdayStateTopic(config) {
+  return `${config.topicPrefix}/yesterday`;
+}
+
 export function consumptionStateTopic(config) {
   return `${config.topicPrefix}/consumption`;
 }
@@ -28,6 +36,11 @@ function buildComponents(config) {
       name: metric.name,
       state_class: 'measurement',
       value_template: `{{ value_json.${metric.key} | default(0) }}`,
+      // Attaches yesterday's value for the same metric as a "yesterday" state
+      // attribute, sourced from the separate yesterday topic (which has no
+      // entities of its own).
+      json_attributes_topic: yesterdayStateTopic(config),
+      json_attributes_template: `{"yesterday": {{ value_json.${metric.key} | default(0) }}}`,
       has_entity_name: true,
       force_update: true,
     };
@@ -65,7 +78,7 @@ export function buildDeviceDiscoveryPayload(config) {
       name: 'evcc2mqtt',
     },
     availability: [{ topic: `${config.topicPrefix}/status` }],
-    state_topic: `${config.topicPrefix}/sessions`,
+    state_topic: todayStateTopic(config),
     components: buildComponents(config),
   };
 }
@@ -75,8 +88,12 @@ export function publishDeviceDiscovery(client, config) {
   client.publish(topic, JSON.stringify(buildDeviceDiscoveryPayload(config)), { qos: 0, retain: true });
 }
 
-export function publishState(client, config, statePayload) {
-  client.publish(`${config.topicPrefix}/sessions`, JSON.stringify(statePayload), { qos: 0, retain: true });
+export function publishTodayState(client, config, statePayload) {
+  client.publish(todayStateTopic(config), JSON.stringify(statePayload), { qos: 0, retain: true });
+}
+
+export function publishYesterdayState(client, config, statePayload) {
+  client.publish(yesterdayStateTopic(config), JSON.stringify(statePayload), { qos: 0, retain: true });
 }
 
 export function publishDebugSessions(client, config, sessions) {

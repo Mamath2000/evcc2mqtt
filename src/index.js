@@ -1,8 +1,8 @@
 import { config } from './config.js';
-import { fetchCurrentMonthSessions } from './evccApi.js';
-import { sessionsForDay, computeDayAggregate, localDateKey } from './aggregate.js';
+import { fetchCurrentMonthSessions, fetchSessionsForMonth } from './evccApi.js';
+import { sessionsForDay, computeDayAggregate, localDateKey, previousDateKey } from './aggregate.js';
 import { createMqttClient } from './mqttClient.js';
-import { publishDeviceDiscovery, publishState, publishDebugSessions } from './discovery.js';
+import { publishDeviceDiscovery, publishTodayState, publishYesterdayState, publishDebugSessions } from './discovery.js';
 import { createConsumptionTracker } from './consumption.js';
 import { createLogger } from './logger.js';
 
@@ -12,23 +12,34 @@ async function run(client, consumption) {
   try {
     const sessions = await fetchCurrentMonthSessions(config);
     const today = localDateKey(new Date(), config.timeZone);
+    const yesterday = previousDateKey(today);
     const todaySessions = sessionsForDay(sessions, today);
     publishDebugSessions(client, config, todaySessions);
     logger.debug(`fetched ${sessions.length} session(s) this month, ${todaySessions.length} for today`);
 
+    // Yesterday can fall in the previous calendar month (e.g. today is the
+    // 1st): only issue a second API call when that's actually the case,
+    // otherwise reuse the month already fetched above.
+    const sameMonthAsToday = yesterday.slice(0, 7) === today.slice(0, 7);
+    const yesterdaySessionsSource = sameMonthAsToday ? sessions : await fetchSessionsForMonth(config, yesterday);
+    const yesterdaySessions = sessionsForDay(yesterdaySessionsSource, yesterday);
+
     // Always publish, even with zero sessions: otherwise the retained MQTT
-    // state keeps showing yesterday's frozen total until the first session
-    // of the new day appears, and HA records that stale value as if it
-    // belonged to today.
-    const aggregate = computeDayAggregate(todaySessions, consumption.get());
-    publishState(client, config, aggregate);
+    // state keeps showing the previous day's frozen total until the first
+    // session of the new day appears, and HA records that stale value as if
+    // it belonged to today.
+    const todayAggregate = computeDayAggregate(todaySessions, consumption.get());
+    const yesterdayAggregate = computeDayAggregate(yesterdaySessions, consumption.get());
+    publishTodayState(client, config, todayAggregate);
+    publishYesterdayState(client, config, yesterdayAggregate);
 
     if (todaySessions.length === 0) {
       logger.info(`no sessions for today (${today}) yet, published zeroed state`);
     } else {
       logger.info(`published state (${today})`);
-      logger.debug('aggregate', aggregate);
+      logger.debug('today aggregate', todayAggregate);
     }
+    logger.debug(`published yesterday (${yesterday}) state`, yesterdayAggregate);
   } catch (err) {
     logger.error('run failed:', err);
   }
